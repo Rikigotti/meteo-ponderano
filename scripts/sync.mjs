@@ -47,7 +47,7 @@ async function fetchDay(date) {
     calls++;
     const res = await fetch(url);
     if (res.status === 204) return [];
-    if (res.status === 429) { console.log('rate limit, attendo 65s'); await sleep(65000); continue; }
+    if (res.status === 429) { if (attempt >= 1) throw new Error('limite chiamate API raggiunto (429)'); console.log('rate limit, attendo 65s'); await sleep(65000); continue; }
     if (!res.ok) { console.log(`HTTP ${res.status} per ${date}, ritento`); await sleep(5000); continue; }
     const j = await res.json();
     return (j.observations ?? []).map(compact);
@@ -67,7 +67,8 @@ async function main() {
     const recent = d >= addDays(today, -REFETCH_DAYS);
     if (month[d] && !recent) continue;
     if (calls >= MAX_CALLS) { console.log('budget chiamate esaurito, riprendi al prossimo run'); stop = true; break; }
-    month[d] = await fetchDay(d);
+    try { month[d] = await fetchDay(d); }
+    catch (e) { console.log(`stop anticipato a ${d}: ${e.message} (i dati scaricati finora vengono salvati)`); stop = true; break; }
     dirty.add(m);
     if (calls % 25 === 0) { console.log(`${d} (${calls} chiamate)`); for (const k of dirty) saveMonth(k, cache.get(k)); }
     await sleep(2200); // limite WU: 30 chiamate/minuto
