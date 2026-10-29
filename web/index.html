@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meteo Ponderano</title>
+<meta name="description" content="Stazione meteo IPONDE1 – Ponderano (BI): dati live, storico e record">
+<meta name="theme-color" content="#14181d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="vendor/uPlot.min.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><circle cx="13" cy="13" r="6" fill="var(--c-orange)"/><path d="M9 25a6 6 0 0 1 1-11.9A8 8 0 0 1 25.5 15 5 5 0 0 1 24 25Z" fill="var(--c-blue)"/></svg>
+    <div><b>Meteo Ponderano</b><small id="stationLine">IPONDE1 · 351 m</small></div>
+  </div>
+  <nav id="tabs" aria-label="Sezioni">
+    <a href="#ora" data-tab="ora">Ora</a>
+    <a href="#storico" data-tab="storico">Storico</a>
+    <a href="#record" data-tab="record">Record</a>
+    <a href="#anni" data-tab="anni">Mesi e anni</a>
+  </nav>
+  <button id="themeBtn" class="icon" title="Cambia tema" aria-label="Cambia tema">☀︎/☾</button>
+</header>
+<main id="view" tabindex="-1"><p class="muted pad">Caricamento…</p></main>
+<footer>Dati: Weather Underground PWS <a href="https://www.wunderground.com/dashboard/pws/IPONDE1">IPONDE1</a> · archivio aggiornato automaticamente · <span id="dataSince"></span></footer>
+<div id="tip" class="tip" hidden></div>
+<script src="vendor/uPlot.iife.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
