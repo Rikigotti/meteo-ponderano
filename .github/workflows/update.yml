@@ -29,6 +29,7 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with: { ref: main }
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - name: Sincronizza storico
@@ -38,7 +39,7 @@ jobs:
         run: |
           git config user.name "meteo-bot"; git config user.email "meteo-bot@users.noreply.github.com"
           git add data
-          git diff --cached --quiet || (git commit -m "dati: aggiornamento $(date -u +%FT%TZ)" && git push)
+          git diff --cached --quiet || (git commit -m "dati: aggiornamento $(date -u +%FT%TZ)" && (git push || (git pull --rebase -X theirs origin main && git push)))
       - name: Build sito
         env: { WU_API_KEY: '${{ secrets.WU_API_KEY }}' }
         run: node scripts/build.mjs
