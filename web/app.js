@@ -43,6 +43,43 @@ async function loadHourly(date) {
 }
 const optJson = url => getJson(url).catch(() => null);
 
+/* ---------- previsioni (Open-Meteo, senza chiave) ---------- */
+const WMO = { 0: ['Sereno', '☀️'], 1: ['Prevalentemente sereno', '🌤️'], 2: ['Parzialmente nuvoloso', '⛅'], 3: ['Coperto', '☁️'], 45: ['Nebbia', '🌫️'], 48: ['Nebbia con brina', '🌫️'],
+  51: ['Pioviggine debole', '🌦️'], 53: ['Pioviggine', '🌦️'], 55: ['Pioviggine intensa', '🌦️'], 56: ['Pioviggine gelata', '🌧️'], 57: ['Pioviggine gelata', '🌧️'],
+  61: ['Pioggia debole', '🌧️'], 63: ['Pioggia moderata', '🌧️'], 65: ['Pioggia forte', '🌧️'], 66: ['Pioggia gelata', '🌧️'], 67: ['Pioggia gelata forte', '🌧️'],
+  71: ['Neve debole', '🌨️'], 73: ['Neve moderata', '🌨️'], 75: ['Neve forte', '❄️'], 77: ['Granelli di neve', '🌨️'],
+  80: ['Rovesci deboli', '🌦️'], 81: ['Rovesci', '🌧️'], 82: ['Rovesci violenti', '⛈️'], 85: ['Rovesci di neve', '🌨️'], 86: ['Rovesci di neve forti', '❄️'],
+  95: ['Temporale', '⛈️'], 96: ['Temporale con grandine', '⛈️'], 99: ['Temporale con grandine forte', '⛈️'] };
+const wmo = c => WMO[c] ?? ['–', '❔'];
+let forecastP = null;
+function loadForecast() {
+  if (!forecastP) {
+    const q = 'latitude=45.531&longitude=8.052&elevation=352&timezone=Europe%2FRome&forecast_days=5&wind_speed_unit=kmh'
+      + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset'
+      + '&hourly=temperature_2m,apparent_temperature,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,relative_humidity_2m,pressure_msl';
+    forecastP = fetch('https://api.open-meteo.com/v1/forecast?' + q).then(r => { if (!r.ok) throw new Error('Open-Meteo ' + r.status); return r.json(); })
+      .catch(e => { forecastP = null; throw e; });
+  }
+  return forecastP;
+}
+const dayLabel = (iso, i) => i === 0 ? 'Oggi' : i === 1 ? 'Domani' : cap(new Intl.DateTimeFormat('it-IT', { weekday: 'long' }).format(toDate(iso)));
+function forecastCards(f, compact) {
+  const d = f.daily;
+  return `<div class="days">${d.time.map((t, i) => {
+    const [label, icon] = wmo(d.weather_code[i]);
+    const prob = d.precipitation_probability_max[i];
+    return `<div class="card day" title="${label}">
+      <div class="lab"><b>${dayLabel(t, i)}</b><span>${toDate(t).getUTCDate()}/${pad2(toDate(t).getUTCMonth() + 1)}</span></div>
+      <div class="ico" aria-hidden="true">${icon}</div>
+      <div class="temps"><span class="up">${nf(d.temperature_2m_max[i], 0)}°</span><span class="down">${nf(d.temperature_2m_min[i], 0)}°</span></div>
+      <div class="sub">${label}</div>
+      <div class="sub">💧 ${nf(d.precipitation_sum[i])} mm${prob != null ? ` · ${prob}%` : ''}</div>
+      ${compact ? '' : `<div class="sub">💨 ${nf(d.wind_speed_10m_max[i], 0)} km/h, raff. ${nf(d.wind_gusts_10m_max[i], 0)} · da ${dirName(d.wind_direction_10m_dominant[i])}</div>
+      <div class="sub">🌅 ${d.sunrise[i].slice(11)} · 🌇 ${d.sunset[i].slice(11)}</div>`}
+    </div>`;
+  }).join('')}</div>`;
+}
+
 /* ---------- tema ---------- */
 $('#themeBtn').onclick = () => {
   const cur = document.documentElement.dataset.theme ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -145,6 +182,9 @@ async function viewOra() {
     </div>
   </div>
 
+  <h2>Prossimi giorni <a href="#previsioni" class="more">dettaglio →</a></h2>
+  <div id="fcStrip"><p class="note">Caricamento previsioni…</p></div>
+
   <h2>Ultime 24 ore</h2>
   <div class="grid two">
     ${chartBox('c-t', 'Temperatura', [[css('--c-orange'), 'Temperatura'], [css('--c-aqua'), 'Punto di rugiada']])}
@@ -163,6 +203,7 @@ async function viewOra() {
   </div>
   <p class="note"><a href="#record">Tutti i record →</a></p>`;
 
+  loadForecast().then(f => { const el = $('#fcStrip'); if (el) el.innerHTML = forecastCards(f, true); }).catch(() => { const el = $('#fcStrip'); if (el) el.innerHTML = '<p class="note">Previsioni non disponibili al momento.</p>'; });
   if (obs.length) {
     const x = obs.map(r => r.epoch);
     const fx = t => timeFmt.format(new Date(t * 1000));
@@ -349,6 +390,32 @@ async function viewAnni() {
     months.map(m => [m.k, m.tavg?.toFixed(1), m.tmax, m.tmin, m.rain.toFixed(1), m.rainDays, m.gust, m.full])));
 }
 
+/* ---------- vista: PREVISIONI ---------- */
+async function viewPrevisioni() {
+  view.innerHTML = '<p class="muted pad">Caricamento previsioni…</p>';
+  let f;
+  try { f = await loadForecast(); } catch { view.innerHTML = '<p class="pad">Previsioni non disponibili al momento. Riprova tra qualche minuto.</p>'; return; }
+  view.innerHTML = `
+  <h2 style="margin-top:0">Prossimi 5 giorni a Ponderano</h2>
+  ${forecastCards(f, false)}
+  <div class="grid two" style="margin-top:12px">
+    ${chartBox('f-t', 'Temperatura', [[css('--c-orange'), 'Temperatura'], [css('--c-violet'), 'Percepita']])}
+    ${chartBox('f-r', 'Precipitazioni (mm/ora)', null)}
+    ${chartBox('f-w', 'Vento', [[css('--c-blue'), 'Medio'], [css('--c-orange'), 'Raffica']])}
+    ${chartBox('f-p', 'Pressione al livello del mare', null)}
+  </div>
+  <p class="note">Modello meteorologico per le coordinate della stazione (45,531 N, 8,052 E, 352 m). Previsioni: <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0). Sono stime di un modello, non misure della tua stazione.</p>`;
+  const h = f.hourly, off = f.utc_offset_seconds ?? 0;
+  const x = h.time.map(t => Date.parse(t + ':00Z') / 1000 - off);
+  const fmtX = t => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }).format(new Date(t * 1000));
+  const xValues = (u, v) => v.map(t => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', timeZone: 'Europe/Rome' }).format(new Date(t * 1000)));
+  const base = { x, time: true, fmtX, xValues, height: 210 };
+  mkChart($('#f-t'), { ...base, unit: '°C', series: [{ label: 'Temperatura', color: css('--c-orange'), values: h.temperature_2m }, { label: 'Percepita', color: css('--c-violet'), values: h.apparent_temperature, width: 1.2 }] });
+  mkChart($('#f-r'), { ...base, unit: 'mm', dec: 1, axisDec: 1, yRange: (u, mn, mx) => [0, Math.max(1, mx)], series: [{ label: 'Precipitazioni', color: css('--c-blue'), values: h.precipitation, bars: true, width: 1 }] });
+  mkChart($('#f-w'), { ...base, unit: 'km/h', dec: 0, series: [{ label: 'Medio', color: css('--c-blue'), values: h.wind_speed_10m }, { label: 'Raffica', color: css('--c-orange'), values: h.wind_gusts_10m, width: 1.2 }] });
+  mkChart($('#f-p'), { ...base, unit: 'hPa', dec: 0, series: [{ label: 'Pressione', color: css('--c-violet'), values: h.pressure_msl }] });
+}
+
 /* ---------- vista: STORICO ---------- */
 const METRICS = {
   temp: { label: 'Temperatura', unit: '°C', dec: 1, series: [['tmax', 'Max', '--c-orange'], ['tavg', 'Media', '--ink2'], ['tmin', 'Min', '--c-blue']] },
@@ -445,7 +512,7 @@ function download(name, text) {
 }
 
 /* ---------- router ---------- */
-const VIEWS = { ora: viewOra, storico: viewStorico, record: viewRecord, anni: viewAnni };
+const VIEWS = { ora: viewOra, previsioni: viewPrevisioni, storico: viewStorico, record: viewRecord, anni: viewAnni };
 async function route() {
   const tab = VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : 'ora';
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.tab === tab));

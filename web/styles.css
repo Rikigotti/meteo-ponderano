@@ -80,3 +80,10 @@ tr.link{cursor:pointer}tr.link:hover td{background:var(--surface2)}
 .u-over{cursor:crosshair}
 .u-axis{font-size:12px}
 .daypanel{margin-top:16px}
+
+.days{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.day .ico{font-size:34px;line-height:1.2;margin:4px 0}
+.day .temps{display:flex;gap:10px;font-size:22px;font-weight:650}
+.day .lab b{color:var(--ink)}
+h2 .more{font-size:12px;text-transform:none;letter-spacing:0;margin-left:8px;font-weight:500}
+@media (max-width:700px){.top{gap:8px 12px}nav{order:3;width:100%}.hero .big{font-size:64px}}
