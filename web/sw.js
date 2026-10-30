@@ -1,5 +1,5 @@
 // Cache minima per l'app shell; i dati restano sempre online-first.
-const SHELL = 'shell-v2';
+const SHELL = 'shell-v3';
 self.addEventListener('install', e => { e.waitUntil(caches.open(SHELL).then(c => c.addAll(['./', 'styles.css', 'app.js', 'vendor/uPlot.iife.min.js', 'vendor/uPlot.min.css'])).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {
