@@ -105,7 +105,9 @@ const chartBox = (id, title, leg) => `<div class="card"><h3>${title}</h3>${leg ?
 
 /* ---------- vista: ORA ---------- */
 async function viewOra() {
-  const [cur, h24, days] = await Promise.all([optJson('live/current.json'), optJson('live/last24h.json'), loadDaily()]);
+  // su Vercel il dato arriva dalle funzioni /api (sempre fresco); altrimenti dagli snapshot pubblicati col sito
+  const liveJson = async name => (await optJson(`api/${name}`)) ?? optJson(`live/${name}.json`);
+  const [cur, h24, days] = await Promise.all([liveJson('current'), liveJson('last24h'), loadDaily()]);
   const o = cur?.observations?.[0];
   if (!o) { view.innerHTML = '<p class="muted pad">Dato live non disponibile. Riprova tra qualche minuto.</p>'; return; }
   const m = o.metric;

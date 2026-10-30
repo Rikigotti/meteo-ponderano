@@ -1,0 +1,6 @@
+{
+  "name": "meteo-ponderano",
+  "private": true,
+  "type": "module",
+  "description": "Web app per la stazione meteo IPONDE1 (Ponderano)"
+}

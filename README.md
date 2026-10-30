@@ -19,3 +19,9 @@ WU_API_KEY=... node scripts/sync.mjs     # backfill/aggiornamento storico
 WU_API_KEY=... node scripts/build.mjs    # genera _site/
 npx serve _site
 ```
+
+## Vercel (dato live)
+Il sito si può pubblicare anche su Vercel: `vercel.json` esegue `node scripts/build.mjs` e serve `_site/`.
+Le funzioni `api/current` e `api/last24h` leggono Weather Underground con la variabile d'ambiente `WU_API_KEY`
+(impostala in Vercel → Settings → Environment Variables) con cache di 5 minuti. Su GitHub Pages, dove `/api` non esiste,
+la scheda Ora ripiega sugli snapshot `live/*.json`.
