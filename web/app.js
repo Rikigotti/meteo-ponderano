@@ -137,6 +137,9 @@ function mkChart(el, o) {
   live.push({ destroy() { ro.disconnect(); u.destroy(); } });
   return u;
 }
+/* tabella responsive: su schermi stretti ogni riga diventa una scheda con le etichette (vedi .stack in styles.css) */
+const tbl = (heads, rows, cols = 4) => `<table class="stack" style="--cols:${cols}"><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${
+  rows.map(r => `<tr${r.day ? ` class="link" data-day="${r.day}"` : ''}>${r.cells.map((c, i) => `<td${i ? ` data-label="${heads[i]}"` : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 const legend = items => `<div class="legend">${items.map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join('')}</div>`;
 const chartBox = (id, title, leg) => `<div class="card"><h3>${title}</h3>${leg ? legend(leg) : ''}<div class="chart" id="${id}"></div></div>`;
 
@@ -228,9 +231,8 @@ function sameDayTable(days, today) {
   const md = today.slice(5);
   const rows = days.filter(d => d.d.slice(5) === md && d.d < today).sort((a, b) => b.d.localeCompare(a.d));
   if (!rows.length) return '<p class="note">Nessun anno precedente disponibile.</p>';
-  return `<div class="tablewrap"><table><thead><tr><th>Anno</th><th>Min</th><th>Max</th><th>Media</th><th>Raffica</th><th>Pioggia</th></tr></thead><tbody>${
-    rows.map(d => `<tr class="link" data-day="${d.d}"><td>${d.d.slice(0, 4)}</td><td>${nf(d.tmin)}°</td><td>${nf(d.tmax)}°</td><td>${nf(d.tavg)}°</td><td>${nf(d.gust, 0)} km/h</td><td>${nf(d.rain)} mm</td></tr>`).join('')
-  }</tbody></table></div>`;
+  return `<div class="tablewrap stack">${tbl(['Anno', 'Min', 'Max', 'Media', 'Raffica', 'Pioggia'],
+    rows.map(d => ({ day: d.d, cells: [d.d.slice(0, 4), nf(d.tmin) + '°', nf(d.tmax) + '°', nf(d.tavg) + '°', nf(d.gust, 0) + ' km/h', nf(d.rain) + ' mm'] })), 5)}</div>`;
 }
 
 /* ---------- record ---------- */
@@ -312,11 +314,10 @@ async function viewRecord() {
   </tbody></table></div></div>
 
   <h2>Record per mese</h2>
-  <div class="tablewrap"><table><thead><tr><th>Mese</th><th>Max</th><th>Min</th><th>Raffica</th><th>Pioggia/giorno</th></tr></thead><tbody>${
-    monthly.map(m => `<tr><td>${cap(MESI[m.m])}</td>${[['hi', '°C', 1], ['lo', '°C', 1], ['g', 'km/h', 0], ['rain', 'mm', 1]].map(([k, u, dc]) => {
-      const x = m[k]; return x ? `<td class="link" data-day="${x.d}" style="cursor:pointer">${nf(x.v, dc)} ${u} <span class="muted">${x.d.slice(8)}/${x.d.slice(5, 7)}/${x.d.slice(2, 4)}</span></td>` : '<td>–</td>';
-    }).join('')}</tr>`).join('')
-  }</tbody></table></div>`;
+  <div class="tablewrap stack">${tbl(['Mese', 'Max', 'Min', 'Raffica', 'Pioggia/giorno'],
+    monthly.map(m => ({ cells: [cap(MESI[m.m]), ...[['hi', '°C', 1], ['lo', '°C', 1], ['g', 'km/h', 0], ['rain', 'mm', 1]].map(([k, u, dc]) => {
+      const x = m[k]; return x ? `<span class="rec-cell" data-day="${x.d}">${nf(x.v, dc)} ${u}<small class="muted">${x.d.slice(8)}/${x.d.slice(5, 7)}/${x.d.slice(2, 4)}</small></span>` : '–';
+    })] })), 2)}</div>`;
 }
 
 /* ---------- aggregazioni mensili ---------- */
@@ -357,11 +358,11 @@ async function viewAnni() {
   <h2>Riepilogo mensile</h2>
   <div class="bar"><label>Anno <select id="yearSel"><option value="all">Tutti</option>${[...new Set(months.map(m => m.y))].map(y => `<option>${y}</option>`).join('')}</select></label>
   <button class="btn" id="csvM">Scarica CSV</button></div>
-  <div class="tablewrap" id="mtab"></div>
+  <div class="tablewrap stack" id="mtab"></div>
   <p class="note">* mese incompleto (mancano dati): pioggia e medie sono parziali.</p>`;
 
   mkChart($('#a-t'), {
-    x: Array.from({ length: 12 }, (_, i) => i + 1), height: 260, unit: '°C', fmtX: m => cap(MESI[m - 1]), xValues: (u, v) => v.map(m => cap(MESI[m - 1]).slice(0, 3)),
+    x: Array.from({ length: 12 }, (_, i) => i + 1), height: 260, unit: '°C', fmtX: m => cap(MESI[Math.round(m) - 1] ?? ''), xValues: (u, v) => v.map(m => Number.isInteger(m) && MESI[m - 1] ? cap(MESI[m - 1]).slice(0, 3) : ''),
     series: years.map(y => ({ label: String(y), color: colorOf(y), values: Array.from({ length: 12 }, (_, i) => { const m = months.find(x => x.y === y && x.mo === i + 1); return m && m.n >= 15 ? m.tavg : null; }) })),
   });
   const doy = iso => Math.floor((Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8)) - Date.UTC(+iso.slice(0, 4), 0, 0)) / 864e5);
@@ -382,8 +383,8 @@ async function viewAnni() {
   const draw = () => {
     const y = $('#yearSel').value;
     const rows = months.filter(m => y === 'all' || String(m.y) === y).reverse();
-    $('#mtab').innerHTML = `<table><thead><tr><th>Mese</th><th>T media</th><th>T max</th><th>T min</th><th>Pioggia</th><th>Giorni pioggia</th><th>Raffica max</th></tr></thead><tbody>${
-      rows.map(m => `<tr><td>${cap(MESI[m.mo - 1])} ${m.y}${m.full ? '' : ' *'}</td><td>${nf(m.tavg)}°</td><td>${nf(m.tmax)}°</td><td>${nf(m.tmin)}°</td><td>${nf(m.rain)} mm</td><td>${m.rainDays}</td><td>${nf(m.gust, 0)} km/h</td></tr>`).join('')}</tbody></table>`;
+    $('#mtab').innerHTML = tbl(['Mese', 'T media', 'T max', 'T min', 'Pioggia', 'Giorni pioggia', 'Raffica max'],
+      rows.map(m => ({ cells: [`${cap(MESI[m.mo - 1])} ${m.y}${m.full ? '' : ' *'}`, nf(m.tavg) + '°', nf(m.tmax) + '°', nf(m.tmin) + '°', nf(m.rain) + ' mm', m.rainDays, nf(m.gust, 0) + ' km/h'] })), 3);
   };
   $('#yearSel').onchange = draw; draw();
   $('#csvM').onclick = () => download('riepilogo-mensile.csv', toCsv(['mese', 'tmedia', 'tmax', 'tmin', 'pioggia_mm', 'giorni_pioggia', 'raffica_max', 'completo'],
@@ -424,7 +425,8 @@ const METRICS = {
   um: { label: 'Umidità', unit: '%', dec: 0, series: [['hmax', 'Max', '--c-aqua'], ['havg', 'Media', '--ink2'], ['hmin', 'Min', '--c-yellow']], yRange: [0, 100] },
   pioggia: { label: 'Pioggia', unit: 'mm', dec: 1, series: [['rain', 'Pioggia giornaliera', '--c-blue']], bars: true },
 };
-const hist = { metric: 'temp', range: '90', from: null, to: null, day: null };
+const hist = { metric: 'temp', range: '90', from: null, to: null, day: null, sortKey: 'd', sortAsc: false, limit: 100 };
+const SORTS = [['d', 'Data'], ['tmin', 'Min'], ['tmax', 'Max'], ['tavg', 'Media'], ['wmax', 'Vento max'], ['gust', 'Raffica'], ['rain', 'Pioggia'], ['pmax', 'Pressione max'], ['pmin', 'Pressione min'], ['havg', 'Umidità']];
 
 async function viewStorico() {
   const days = await loadDaily();
@@ -440,18 +442,35 @@ async function viewStorico() {
     <p class="note">Trascina per zoomare, doppio clic per tornare all'intero periodo, clic su un punto per aprire il dettaglio orario di quel giorno.</p></div>
   <div class="daypanel" id="dayPanel"></div>
   <h2>Dati giornalieri</h2>
-  <div class="tablewrap" id="hTab"></div>`;
+  <div class="bar"><label class="muted">Ordina per <select id="sortSel">${SORTS.map(([k, l]) => `<option value="${k}"${hist.sortKey === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <button class="btn" id="sortDir" title="Inverti ordine"></button><span class="muted" id="rowCount"></span></div>
+  <div class="tablewrap stack" id="hTab"></div>
+  <div class="bar" style="justify-content:center;margin-top:12px"><button class="btn" id="moreRows" hidden>Mostra altri giorni</button></div>`;
 
   const first = days[0].d;
   const dFrom = $('#dFrom'), dTo = $('#dTo');
   dFrom.min = dTo.min = first; dFrom.max = dTo.max = last;
   let rows = [];
+  const drawTable = () => {
+    const k = hist.sortKey, dir = hist.sortAsc ? 1 : -1;
+    const sorted = [...rows].sort((a, b) => k === 'd' ? dir * a.d.localeCompare(b.d) : (a[k] == null) - (b[k] == null) || dir * (a[k] - b[k]));
+    const shown = sorted.slice(0, hist.limit);
+    $('#hTab').innerHTML = tbl(['Data', 'Min', 'Max', 'Media', 'Vento max', 'Raffica', 'Pioggia', 'Pressione', 'Umidità'],
+      shown.map(d => ({ day: d.d, cells: [fDate(d.d) + (okDay(d) ? '' : ' *'), nf(d.tmin) + '°', nf(d.tmax) + '°', nf(d.tavg) + '°', nf(d.wmax, 0) + ' km/h', nf(d.gust, 0) + ' km/h', nf(d.rain) + ' mm', `${nf(d.pmin, 0)}–${nf(d.pmax, 0)}`, nf(d.havg, 0) + '%'] })), 4);
+    $('#rowCount').textContent = `${shown.length} di ${sorted.length} giorni`;
+    $('#sortDir').textContent = hist.sortAsc ? '↑ Crescente' : '↓ Decrescente';
+    $('#moreRows').hidden = shown.length >= sorted.length;
+  };
+  $('#sortSel').onchange = e => { hist.sortKey = e.target.value; hist.limit = 100; drawTable(); };
+  $('#sortDir').onclick = () => { hist.sortAsc = !hist.sortAsc; hist.limit = 100; drawTable(); };
+  $('#moreRows').onclick = () => { hist.limit += 200; drawTable(); };
   const apply = () => {
     let from, to = last;
     if (hist.from || hist.to) { from = hist.from ?? first; to = hist.to ?? last; }
     else from = hist.range === 'all' ? first : addDays(last, -(+hist.range - 1));
     dFrom.value = from; dTo.value = to;
     rows = days.filter(d => d.d >= from && d.d <= to);
+    hist.limit = 100;
     draw();
   };
   const draw = () => {
@@ -466,8 +485,7 @@ async function viewStorico() {
       onClick: i => openDay(rows[i].d),
       series: m.series.map(([k, l, c]) => ({ label: l, color: css(c), values: rows.map(d => d[k]), width: m.bars ? 1 : (k === 'tavg' || k === 'wavg' || k === 'havg' ? 1.5 : 2), bars: m.bars })),
     });
-    $('#hTab').innerHTML = `<table><thead><tr><th>Data</th><th>Min</th><th>Max</th><th>Media</th><th>Vento max</th><th>Raffica</th><th>Pioggia</th><th>Pressione</th><th>Umidità</th></tr></thead><tbody>${
-      [...rows].reverse().map(d => `<tr class="link" data-day="${d.d}"><td>${fDate(d.d)}${okDay(d) ? '' : ' *'}</td><td>${nf(d.tmin)}°</td><td>${nf(d.tmax)}°</td><td>${nf(d.tavg)}°</td><td>${nf(d.wmax, 0)}</td><td>${nf(d.gust, 0)}</td><td>${nf(d.rain)}</td><td>${nf(d.pmin, 0)}–${nf(d.pmax, 0)}</td><td>${nf(d.havg, 0)}%</td></tr>`).join('')}</tbody></table>`;
+    drawTable();
   };
   $('#mSeg').onclick = e => { const k = e.target.dataset.k; if (!k) return; hist.metric = k; [...$('#mSeg').children].forEach(b => b.classList.toggle('on', b.dataset.k === k)); draw(); };
   $('#rSeg').onclick = e => { const k = e.target.dataset.k; if (!k) return; hist.range = k; hist.from = hist.to = null; [...$('#rSeg').children].forEach(b => b.classList.toggle('on', b.dataset.k === k)); apply(); };

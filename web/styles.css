@@ -87,3 +87,22 @@ tr.link{cursor:pointer}tr.link:hover td{background:var(--surface2)}
 .day .lab b{color:var(--ink)}
 h2 .more{font-size:12px;text-transform:none;letter-spacing:0;margin-left:8px;font-weight:500}
 @media (max-width:700px){.top{gap:8px 12px}nav{order:3;width:100%}.hero .big{font-size:64px}}
+
+/* tabelle: su schermi stretti ogni riga diventa una scheda con le etichette */
+.card table td{white-space:normal}
+.rec-cell{cursor:pointer;display:inline-flex;flex-direction:column;align-items:flex-end}
+.rec-cell small{font-size:11px}
+tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface2) 35%,transparent)}
+@media (max-width:700px){
+  .tablewrap.stack{max-height:none;overflow:visible;border:0;background:none;display:grid;gap:8px}
+  .stack thead{display:none}
+  .stack,.stack tbody{display:block}
+  .stack tbody{display:grid;gap:8px}
+  .stack tr{display:grid;grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));gap:8px 10px;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+  .stack td{display:block;padding:0;border:0;text-align:left;background:none!important;white-space:normal;font-weight:600;font-size:14px}
+  .stack td{white-space:nowrap}
+  .stack td:first-child{grid-column:1/-1;font-size:15px;white-space:normal}
+  .stack td[data-label]::before{content:attr(data-label);display:block;font-size:11px;font-weight:500;color:var(--muted)}
+  .rec-cell{align-items:flex-start}
+  .card table tr{display:table-row}.card table td{display:table-cell;font-weight:400;font-size:14px}
+}
