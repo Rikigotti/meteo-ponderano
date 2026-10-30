@@ -51,16 +51,32 @@ const WMO = { 0: ['Sereno', '☀️'], 1: ['Prevalentemente sereno', '🌤️'],
   80: ['Rovesci deboli', '🌦️'], 81: ['Rovesci', '🌧️'], 82: ['Rovesci violenti', '⛈️'], 85: ['Rovesci di neve', '🌨️'], 86: ['Rovesci di neve forti', '❄️'],
   95: ['Temporale', '⛈️'], 96: ['Temporale con grandine', '⛈️'], 99: ['Temporale con grandine forte', '⛈️'] };
 const wmo = c => WMO[c] ?? ['–', '❔'];
-let forecastP = null;
-function loadForecast() {
-  if (!forecastP) {
-    const q = 'latitude=45.531&longitude=8.052&elevation=352&timezone=Europe%2FRome&forecast_days=5&wind_speed_unit=kmh'
+const HOME = { name: 'Ponderano', sub: 'stazione IPONDE1', lat: 45.531, lon: 8.052, elevation: 352, tz: 'Europe/Rome', home: true };
+const forecastCache = new Map();
+function loadForecast(place = HOME) {
+  const key = `${place.lat},${place.lon}`;
+  if (!forecastCache.has(key)) {
+    const q = `latitude=${place.lat}&longitude=${place.lon}` + (place.elevation != null ? `&elevation=${place.elevation}` : '')
+      + '&timezone=auto&forecast_days=5&wind_speed_unit=kmh'
+      + '&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day'
       + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset'
       + '&hourly=temperature_2m,apparent_temperature,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,relative_humidity_2m,pressure_msl';
-    forecastP = fetch('https://api.open-meteo.com/v1/forecast?' + q).then(r => { if (!r.ok) throw new Error('Open-Meteo ' + r.status); return r.json(); })
-      .catch(e => { forecastP = null; throw e; });
+    const p = fetch('https://api.open-meteo.com/v1/forecast?' + q).then(r => { if (!r.ok) throw new Error('Open-Meteo ' + r.status); return r.json(); })
+      .catch(e => { forecastCache.delete(key); throw e; });
+    forecastCache.set(key, p);
   }
-  return forecastP;
+  return forecastCache.get(key);
+}
+// luogo scelto e ricerche recenti: solo comodità del singolo browser
+const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+async function searchPlaces(q) {
+  const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=it&format=json`);
+  if (!r.ok) throw new Error('geocoding ' + r.status);
+  return ((await r.json()).results ?? []).map(x => ({
+    name: x.name, sub: [x.admin2, x.admin1, x.country].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', '),
+    lat: x.latitude, lon: x.longitude, elevation: x.elevation ?? null, tz: x.timezone, pop: x.population,
+  }));
 }
 const dayLabel = (iso, i) => i === 0 ? 'Oggi' : i === 1 ? 'Domani' : cap(new Intl.DateTimeFormat('it-IT', { weekday: 'long' }).format(toDate(iso)));
 function forecastCards(f, compact) {
@@ -393,28 +409,84 @@ async function viewAnni() {
 
 /* ---------- vista: PREVISIONI ---------- */
 async function viewPrevisioni() {
-  view.innerHTML = '<p class="muted pad">Caricamento previsioni…</p>';
-  let f;
-  try { f = await loadForecast(); } catch { view.innerHTML = '<p class="pad">Previsioni non disponibili al momento. Riprova tra qualche minuto.</p>'; return; }
+  let place = lsGet('place', HOME);
+  const recents = () => lsGet('recents', []);
   view.innerHTML = `
-  <h2 style="margin-top:0">Prossimi 5 giorni a Ponderano</h2>
-  ${forecastCards(f, false)}
-  <div class="grid two" style="margin-top:12px">
-    ${chartBox('f-t', 'Temperatura', [[css('--c-orange'), 'Temperatura'], [css('--c-violet'), 'Percepita']])}
-    ${chartBox('f-r', 'Precipitazioni (mm/ora)', null)}
-    ${chartBox('f-w', 'Vento', [[css('--c-blue'), 'Medio'], [css('--c-orange'), 'Raffica']])}
-    ${chartBox('f-p', 'Pressione al livello del mare', null)}
+  <div class="card searchcard">
+    <div class="search">
+      <input id="q" type="search" placeholder="Cerca una città o un paese (es. Milano, Zurigo, Roma…)" autocomplete="off" aria-label="Cerca un luogo" aria-controls="sug">
+      <ul id="sug" role="listbox" hidden></ul>
+    </div>
+    <div class="chips" id="chips"></div>
   </div>
-  <p class="note">Modello meteorologico per le coordinate della stazione (45,531 N, 8,052 E, 352 m). Previsioni: <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0). Sono stime di un modello, non misure della tua stazione.</p>`;
-  const h = f.hourly, off = f.utc_offset_seconds ?? 0;
-  const x = h.time.map(t => Date.parse(t + ':00Z') / 1000 - off);
-  const fmtX = t => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }).format(new Date(t * 1000));
-  const xValues = (u, v) => v.map(t => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', timeZone: 'Europe/Rome' }).format(new Date(t * 1000)));
-  const base = { x, time: true, fmtX, xValues, height: 210 };
-  mkChart($('#f-t'), { ...base, unit: '°C', series: [{ label: 'Temperatura', color: css('--c-orange'), values: h.temperature_2m }, { label: 'Percepita', color: css('--c-violet'), values: h.apparent_temperature, width: 1.2 }] });
-  mkChart($('#f-r'), { ...base, unit: 'mm', dec: 1, axisDec: 1, yRange: (u, mn, mx) => [0, Math.max(1, mx)], series: [{ label: 'Precipitazioni', color: css('--c-blue'), values: h.precipitation, bars: true, width: 1 }] });
-  mkChart($('#f-w'), { ...base, unit: 'km/h', dec: 0, series: [{ label: 'Medio', color: css('--c-blue'), values: h.wind_speed_10m }, { label: 'Raffica', color: css('--c-orange'), values: h.wind_gusts_10m, width: 1.2 }] });
-  mkChart($('#f-p'), { ...base, unit: 'hPa', dec: 0, series: [{ label: 'Pressione', color: css('--c-violet'), values: h.pressure_msl }] });
+  <div id="fc"></div>`;
+
+  const chips = () => {
+    const list = [HOME, ...recents().filter(r => !(r.lat === HOME.lat && r.lon === HOME.lon))];
+    $('#chips').innerHTML = list.map((pl, i) => `<button class="chip${pl.lat === place.lat && pl.lon === place.lon ? ' on' : ''}" data-i="${i}">${pl.home ? '📍 ' : ''}${pl.name}</button>`).join('');
+    $('#chips').onclick = e => { const b = e.target.closest('.chip'); if (b) choose(list[+b.dataset.i], false); };
+  };
+  const choose = (pl, remember = true) => {
+    place = pl; lsSet('place', pl);
+    if (remember && !pl.home) lsSet('recents', [pl, ...recents().filter(r => !(r.lat === pl.lat && r.lon === pl.lon))].slice(0, 5));
+    $('#q').value = ''; hideSug(); chips(); show();
+  };
+
+  // ricerca con suggerimenti
+  const sug = $('#sug'), q = $('#q'); let timer, seq = 0, found = [], active = -1;
+  const hideSug = () => { sug.hidden = true; active = -1; };
+  const renderSug = (msg) => {
+    sug.hidden = false;
+    sug.innerHTML = msg ? `<li class="none">${msg}</li>` : found.map((pl, i) => `<li role="option" data-i="${i}" class="${i === active ? 'on' : ''}"><b>${pl.name}</b><span class="muted">${pl.sub}${pl.elevation != null ? ` · ${Math.round(pl.elevation)} m` : ''}</span></li>`).join('');
+  };
+  q.oninput = () => {
+    clearTimeout(timer); const v = q.value.trim();
+    if (v.length < 2) { hideSug(); return; }
+    timer = setTimeout(async () => {
+      const my = ++seq;
+      try { const r = await searchPlaces(v); if (my !== seq) return; found = r; active = -1; renderSug(r.length ? '' : 'Nessun risultato'); }
+      catch { if (my === seq) renderSug('Ricerca non disponibile al momento'); }
+    }, 250);
+  };
+  q.onkeydown = e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { if (!found.length) return; e.preventDefault(); active = (active + (e.key === 'ArrowDown' ? 1 : -1) + found.length) % found.length; renderSug(); }
+    else if (e.key === 'Enter' && found.length && !sug.hidden) { e.preventDefault(); choose(found[Math.max(active, 0)]); }
+    else if (e.key === 'Escape') hideSug();
+  };
+  sug.onmousedown = e => { const li = e.target.closest('li[data-i]'); if (li) { e.preventDefault(); choose(found[+li.dataset.i]); } };
+  q.onblur = () => setTimeout(hideSug, 150);
+
+  const show = async () => {
+    const box = $('#fc'); box.innerHTML = '<p class="muted pad">Caricamento previsioni…</p>';
+    let f; const mine = place;
+    try { f = await loadForecast(place); } catch { if (mine === place) box.innerHTML = '<p class="pad">Previsioni non disponibili al momento. Riprova tra qualche minuto.</p>'; return; }
+    if (mine !== place || !$('#fc')) return; // nel frattempo l'utente ha scelto altro
+    live.forEach(c => c.destroy()); live = [];
+    const tz = f.timezone || place.tz || 'Europe/Rome', cur = f.current;
+    const [clabel, cicon] = cur ? wmo(cur.weather_code) : ['', ''];
+    box.innerHTML = `
+    <h2 style="margin-top:20px">Prossimi 5 giorni · ${place.name}</h2>
+    <p class="note" style="margin-top:-4px">${place.sub}${place.elevation != null ? ` · ${Math.round(place.elevation)} m` : ''}${place.home ? '' : ` · ${(Math.abs(place.lat)).toFixed(2)}° ${place.lat >= 0 ? 'N' : 'S'}, ${(Math.abs(place.lon)).toFixed(2)}° ${place.lon >= 0 ? 'E' : 'O'}`}</p>
+    ${cur ? `<div class="card nowcard"><span class="ico">${cicon}</span><div><b>Adesso: ${nf(cur.temperature_2m, 0)}°</b> <span class="muted">(percepita ${nf(cur.apparent_temperature, 0)}°)</span><div class="sub">${clabel} · umidità ${nf(cur.relative_humidity_2m, 0)}% · vento ${nf(cur.wind_speed_10m, 0)} km/h${place.home ? ' · <i>valori del modello; la misura reale della stazione è nella scheda Ora</i>' : ''}</div></div></div>` : ''}
+    ${forecastCards(f, false)}
+    <div class="grid two" style="margin-top:12px">
+      ${chartBox('f-t', 'Temperatura', [[css('--c-orange'), 'Temperatura'], [css('--c-violet'), 'Percepita']])}
+      ${chartBox('f-r', 'Precipitazioni (mm/ora)', null)}
+      ${chartBox('f-w', 'Vento', [[css('--c-blue'), 'Medio'], [css('--c-orange'), 'Raffica']])}
+      ${chartBox('f-p', 'Pressione al livello del mare', null)}
+    </div>
+    <p class="note">Previsioni di un modello meteorologico per il punto indicato${place.home ? ' (coordinate della stazione)' : ''}: <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0). Non sono misure della tua stazione.</p>`;
+    const h = f.hourly, off = f.utc_offset_seconds ?? 0;
+    const x = h.time.map(t => Date.parse(t + ':00Z') / 1000 - off);
+    const fmtX = t => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz }).format(new Date(t * 1000));
+    const xValues = (u, v) => v.map(t => new Intl.DateTimeFormat('it-IT', { weekday: 'short', day: 'numeric', timeZone: tz }).format(new Date(t * 1000)));
+    const base = { x, time: true, fmtX, xValues, height: 210 };
+    mkChart($('#f-t'), { ...base, unit: '°C', series: [{ label: 'Temperatura', color: css('--c-orange'), values: h.temperature_2m }, { label: 'Percepita', color: css('--c-violet'), values: h.apparent_temperature, width: 1.2 }] });
+    mkChart($('#f-r'), { ...base, unit: 'mm', dec: 1, axisDec: 1, yRange: (u, mn, mx) => [0, Math.max(1, mx)], series: [{ label: 'Precipitazioni', color: css('--c-blue'), values: h.precipitation, bars: true, width: 1 }] });
+    mkChart($('#f-w'), { ...base, unit: 'km/h', dec: 0, series: [{ label: 'Medio', color: css('--c-blue'), values: h.wind_speed_10m }, { label: 'Raffica', color: css('--c-orange'), values: h.wind_gusts_10m, width: 1.2 }] });
+    mkChart($('#f-p'), { ...base, unit: 'hPa', dec: 0, series: [{ label: 'Pressione', color: css('--c-violet'), values: h.pressure_msl }] });
+  };
+  chips(); show();
 }
 
 /* ---------- vista: STORICO ---------- */

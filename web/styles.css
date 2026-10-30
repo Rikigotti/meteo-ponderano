@@ -106,3 +106,19 @@ tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface2) 35%,tra
   .rec-cell{align-items:flex-start}
   .card table tr{display:table-row}.card table td{display:table-cell;font-weight:400;font-size:14px}
 }
+
+/* ricerca luogo */
+.searchcard{margin-bottom:4px}
+.search{position:relative}
+.search input{width:100%;padding:11px 14px;font-size:16px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+.search input:focus{outline:2px solid var(--accent);outline-offset:1px}
+#sug{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px #0003;max-height:340px;overflow:auto}
+#sug li{padding:9px 10px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;gap:1px}
+#sug li span{font-size:12.5px}
+#sug li:hover,#sug li.on{background:var(--surface2)}
+#sug li.none{cursor:default;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chip{border:1px solid var(--line);background:var(--surface);color:var(--ink2);border-radius:99px;padding:5px 12px;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.nowcard{display:flex;gap:14px;align-items:center;margin:8px 0 12px}
+.nowcard .ico{font-size:36px}
