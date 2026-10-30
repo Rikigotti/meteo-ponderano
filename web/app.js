@@ -302,7 +302,7 @@ function rainMonthly(days) {
 async function viewAnni() {
   const days = await loadDaily();
   const months = rainMonthly(days);
-  const years = [...new Set(months.map(m => m.y))];
+  const years = [...new Set(months.map(m => m.y))].filter(y => days.filter(d => d.d.startsWith(y)).length >= 60); // niente anni con pochi giorni
   const palette = [css('--c-blue'), css('--c-orange'), css('--c-aqua'), css('--c-yellow'), css('--c-magenta'), css('--c-violet')];
   const colorOf = y => palette[years.indexOf(y) % palette.length];
   view.innerHTML = `
@@ -312,7 +312,7 @@ async function viewAnni() {
     ${chartBox('a-r', 'Pioggia cumulata nell\'anno', years.map(y => [colorOf(y), y]))}
   </div>
   <h2>Riepilogo mensile</h2>
-  <div class="bar"><label>Anno <select id="yearSel"><option value="all">Tutti</option>${years.map(y => `<option>${y}</option>`).join('')}</select></label>
+  <div class="bar"><label>Anno <select id="yearSel"><option value="all">Tutti</option>${[...new Set(months.map(m => m.y))].map(y => `<option>${y}</option>`).join('')}</select></label>
   <button class="btn" id="csvM">Scarica CSV</button></div>
   <div class="tablewrap" id="mtab"></div>
   <p class="note">* mese incompleto (mancano dati): pioggia e medie sono parziali.</p>`;
