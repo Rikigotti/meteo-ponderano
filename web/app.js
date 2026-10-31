@@ -43,6 +43,29 @@ async function loadHourly(date) {
 }
 const optJson = url => getJson(url).catch(() => null);
 
+// su Vercel il dato arriva dalle funzioni /api (sempre fresco); altrimenti dagli snapshot pubblicati col sito
+const liveJson = async name => (await optJson(`api/${name}`)) ?? optJson(`live/${name}.json`);
+
+// Minime/massime di oggi dalla stazione: unisce le misure ogni 5 minuti, la lettura attuale e il dato orario
+// già archiviato, così nessuna fonte più vecchia può "tagliare" un estremo già raggiunto.
+function todayExtremes(cur, h24) {
+  const today = todayIso(), o = cur?.observations?.[0];
+  const hi = [], lo = [], gu = [];
+  for (const x of h24?.observations ?? []) if (x.obsTimeLocal.startsWith(today)) { hi.push(x.metric.tempHigh); lo.push(x.metric.tempLow); gu.push(x.metric.windgustHigh); }
+  if (o && o.obsTimeLocal.startsWith(today)) { hi.push(o.metric.temp); lo.push(o.metric.temp); gu.push(o.metric.windGust); }
+  const d = store.byDate.get(today);
+  if (d) { hi.push(d.tmax); lo.push(d.tmin); gu.push(d.gust); }
+  const ok = a => a.filter(v => v != null && !Number.isNaN(v));
+  const mx = a => ok(a).length ? Math.max(...ok(a)) : null, mn = a => ok(a).length ? Math.min(...ok(a)) : null;
+  // senza misure di oggi oltre alla lettura attuale, min e max sarebbero solo il valore corrente: meglio non mostrarli
+  const known = hi.length > (o && o.obsTimeLocal.startsWith(today) ? 1 : 0);
+  return known ? { tmax: mx(hi), tmin: mn(lo), gust: mx(gu) } : { tmax: null, tmin: null, gust: null };
+}
+async function stationToday() {
+  const [cur, h24] = await Promise.all([liveJson('current'), liveJson('last24h'), loadDaily()]);
+  return todayExtremes(cur, h24);
+}
+
 /* ---------- previsioni (Open-Meteo, senza chiave) ---------- */
 const WMO = { 0: ['Sereno', '☀️'], 1: ['Prevalentemente sereno', '🌤️'], 2: ['Parzialmente nuvoloso', '⛅'], 3: ['Coperto', '☁️'], 45: ['Nebbia', '🌫️'], 48: ['Nebbia con brina', '🌫️'],
   51: ['Pioviggine debole', '🌦️'], 53: ['Pioviggine', '🌦️'], 55: ['Pioviggine intensa', '🌦️'], 56: ['Pioviggine gelata', '🌧️'], 57: ['Pioviggine gelata', '🌧️'],
@@ -79,18 +102,20 @@ async function searchPlaces(q) {
   }));
 }
 const dayLabel = (iso, i) => i === 0 ? 'Oggi' : i === 1 ? 'Domani' : cap(new Intl.DateTimeFormat('it-IT', { weekday: 'long' }).format(toDate(iso)));
-function forecastCards(f, compact) {
+function forecastCards(f, compact, ext) {
   const d = f.daily;
+  // per oggi, se c'è la stazione, min/max/raffica non possono essere più estremi di quanto già misurato
+  const pick = (i, key, model, fn) => (i === 0 && ext && ext[key] != null && model != null) ? fn(model, ext[key]) : model;
   return `<div class="days">${d.time.map((t, i) => {
     const [label, icon] = wmo(d.weather_code[i]);
     const prob = d.precipitation_probability_max[i];
     return `<div class="card day" title="${label}">
       <div class="lab"><b>${dayLabel(t, i)}</b><span>${toDate(t).getUTCDate()}/${pad2(toDate(t).getUTCMonth() + 1)}</span></div>
       <div class="ico" aria-hidden="true">${icon}</div>
-      <div class="temps"><span class="up">${nf(d.temperature_2m_max[i], 0)}°</span><span class="down">${nf(d.temperature_2m_min[i], 0)}°</span></div>
+      <div class="temps"><span class="up"${i === 0 && ext ? ' title="Massima: la più alta tra previsione e misura della stazione"' : ''}>${nf(pick(i, 'tmax', d.temperature_2m_max[i], Math.max), 0)}°</span><span class="down"${i === 0 && ext ? ' title="Minima: la più bassa tra previsione e misura della stazione"' : ''}>${nf(pick(i, 'tmin', d.temperature_2m_min[i], Math.min), 0)}°</span></div>
       <div class="sub">${label}</div>
       <div class="sub">💧 ${nf(d.precipitation_sum[i])} mm${prob != null ? ` · ${prob}%` : ''}</div>
-      ${compact ? '' : `<div class="sub">💨 ${nf(d.wind_speed_10m_max[i], 0)} km/h, raff. ${nf(d.wind_gusts_10m_max[i], 0)} · da ${dirName(d.wind_direction_10m_dominant[i])}</div>
+      ${compact ? '' : `<div class="sub">💨 ${nf(d.wind_speed_10m_max[i], 0)} km/h, raff. ${nf(pick(i, 'gust', d.wind_gusts_10m_max[i], Math.max), 0)} · da ${dirName(d.wind_direction_10m_dominant[i])}</div>
       <div class="sub">🌅 ${d.sunrise[i].slice(11)} · 🌇 ${d.sunset[i].slice(11)}</div>`}
     </div>`;
   }).join('')}</div>`;
@@ -161,8 +186,6 @@ const chartBox = (id, title, leg) => `<div class="card"><h3>${title}</h3>${leg ?
 
 /* ---------- vista: ORA ---------- */
 async function viewOra() {
-  // su Vercel il dato arriva dalle funzioni /api (sempre fresco); altrimenti dagli snapshot pubblicati col sito
-  const liveJson = async name => (await optJson(`api/${name}`)) ?? optJson(`live/${name}.json`);
   const [cur, h24, days] = await Promise.all([liveJson('current'), liveJson('last24h'), loadDaily()]);
   const o = cur?.observations?.[0];
   if (!o) { view.innerHTML = '<p class="muted pad">Dato live non disponibile. Riprova tra qualche minuto.</p>'; return; }
@@ -171,10 +194,7 @@ async function viewOra() {
   const feels = m.temp >= 27 ? m.heatIndex : m.temp <= 10 ? m.windChill : m.temp;
   const obs = h24?.observations ?? [];
   const today = todayIso();
-  const todayObs = obs.filter(x => x.obsTimeLocal.startsWith(today));
-  const tMax = todayObs.length ? Math.max(...todayObs.map(x => x.metric.tempHigh)) : null;
-  const tMin = todayObs.length ? Math.min(...todayObs.map(x => x.metric.tempLow)) : null;
-  const gMax = todayObs.length ? Math.max(...todayObs.map(x => x.metric.windgustHigh)) : null;
+  const { tmax: tMax, tmin: tMin, gust: gMax } = todayExtremes(cur, h24);
   // tendenza pressione sulle ultime 3 ore
   let trend = null;
   const ref = obs.find(x => x.epoch >= o.epoch - 3 * 3600);
@@ -222,7 +242,7 @@ async function viewOra() {
   </div>
   <p class="note"><a href="#record">Tutti i record →</a></p>`;
 
-  loadForecast().then(f => { const el = $('#fcStrip'); if (el) el.innerHTML = forecastCards(f, true); }).catch(() => { const el = $('#fcStrip'); if (el) el.innerHTML = '<p class="note">Previsioni non disponibili al momento.</p>'; });
+  loadForecast().then(f => { const el = $('#fcStrip'); if (el) el.innerHTML = forecastCards(f, true, todayExtremes(cur, h24)); }).catch(() => { const el = $('#fcStrip'); if (el) el.innerHTML = '<p class="note">Previsioni non disponibili al momento.</p>'; });
   if (obs.length) {
     const x = obs.map(r => r.epoch);
     const fx = t => timeFmt.format(new Date(t * 1000));
@@ -459,7 +479,8 @@ async function viewPrevisioni() {
   const show = async () => {
     const box = $('#fc'); box.innerHTML = '<p class="muted pad">Caricamento previsioni…</p>';
     let f; const mine = place;
-    try { f = await loadForecast(place); } catch { if (mine === place) box.innerHTML = '<p class="pad">Previsioni non disponibili al momento. Riprova tra qualche minuto.</p>'; return; }
+    let ext = null;
+    try { [f, ext] = await Promise.all([loadForecast(place), place.home ? stationToday().catch(() => null) : null]); } catch { if (mine === place) box.innerHTML = '<p class="pad">Previsioni non disponibili al momento. Riprova tra qualche minuto.</p>'; return; }
     if (mine !== place || !$('#fc')) return; // nel frattempo l'utente ha scelto altro
     live.forEach(c => c.destroy()); live = [];
     const tz = f.timezone || place.tz || 'Europe/Rome', cur = f.current;
@@ -468,7 +489,7 @@ async function viewPrevisioni() {
     <h2 style="margin-top:20px">Prossimi 5 giorni · ${place.name}</h2>
     <p class="note" style="margin-top:-4px">${place.sub}${place.elevation != null ? ` · ${Math.round(place.elevation)} m` : ''}${place.home ? '' : ` · ${(Math.abs(place.lat)).toFixed(2)}° ${place.lat >= 0 ? 'N' : 'S'}, ${(Math.abs(place.lon)).toFixed(2)}° ${place.lon >= 0 ? 'E' : 'O'}`}</p>
     ${cur ? `<div class="card nowcard"><span class="ico">${cicon}</span><div><b>Adesso: ${nf(cur.temperature_2m, 0)}°</b> <span class="muted">(percepita ${nf(cur.apparent_temperature, 0)}°)</span><div class="sub">${clabel} · umidità ${nf(cur.relative_humidity_2m, 0)}% · vento ${nf(cur.wind_speed_10m, 0)} km/h${place.home ? ' · <i>valori del modello; la misura reale della stazione è nella scheda Ora</i>' : ''}</div></div></div>` : ''}
-    ${forecastCards(f, false)}
+    ${forecastCards(f, false, ext)}
     <div class="grid two" style="margin-top:12px">
       ${chartBox('f-t', 'Temperatura', [[css('--c-orange'), 'Temperatura'], [css('--c-violet'), 'Percepita']])}
       ${chartBox('f-r', 'Precipitazioni (mm/ora)', null)}
